@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+src/smart_support_agent/demo_data
+scripts
+src/smart_support_agent/qdrant_storage
+.idea/

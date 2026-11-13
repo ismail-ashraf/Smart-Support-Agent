@@ -1,0 +1,905 @@
+﻿{
+  "name": "my workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// ===== Prepare: parse Telegram update, route it, load session =====\nconst ADMIN_IDS = ['REPLACE_WITH_ADMIN_TELEGRAM_USER_ID']; // only these users may upload documents\nconst MAX_HISTORY = 8;                                     // last N messages kept per chat\nconst SESSION_TTL_MS = 24 * 60 * 60 * 1000;                // forget idle chats after 24h\n\nconst msg = $input.first().json.message || {};\nconst from = msg.from || {};\nconst chat_id = msg.chat?.id;\nconst user_name = [from.first_name, from.last_name].filter(Boolean).join(' ') || 'Customer';\nconst username = from.username || null;\nconst text = (msg.text || '').trim();\nconst isAdmin = ADMIN_IDS.includes(String(from.id));\nconst base = { chat_id, user_name, username, text };\nconst lang_hint = /[\\u0600-\\u06FF]/.test(text) ? 'ar' : 'en';\nconst both = (ar, en) => `${ar}\\n\\n${en}`;\n\nconst store = $getWorkflowStaticData('global');\nstore.sessions = store.sessions || {};\nconst now = Date.now();\nfor (const [k, s] of Object.entries(store.sessions)) {\n  if (now - (s.updated || 0) > SESSION_TTL_MS) delete store.sessions[k];\n}\nconst key = String(chat_id);\n\n// Documents: admin -> ingest, everyone else -> polite refusal\nif (msg.document) {\n  if (isAdmin) {\n    return [{ json: { ...base, route: 'ingest', file_id: msg.document.file_id, file_name: msg.document.file_name || 'document' } }];\n  }\n  return [{ json: { ...base, route: 'reply_only', reply: both('أنا بقرأ الرسائل النصية بس 🙏', 'I can only read text messages 🙏') } }];\n}\nif (!text) {\n  return [{ json: { ...base, route: 'reply_only', reply: both('ابعتلي رسالة نصية من فضلك 🙏', 'Please send a text message 🙏') } }];\n}\n\n// Commands\nif (text.startsWith('/start')) {\n  delete store.sessions[key];\n  return [{ json: { ...base, route: 'reply_only', reply: both(\n    'أهلاً بيك في Smile Clinic 😁\\nاسألني عن الأسعار والمواعيد والخدمات، أو قولّي \"عايز أحجز\" وأنا أظبطلك الحجز.\\n/human للتحدث مع موظف • /cancel لإلغاء الحجز الجاري',\n    'Welcome to Smile Clinic 😁\\nAsk me about prices, hours and services, or say \"I want to book\" and I will set it up.\\n/human to talk to a person • /cancel to cancel the booking in progress') } }];\n}\nif (text.startsWith('/cancel')) {\n  delete store.sessions[key];\n  return [{ json: { ...base, route: 'reply_only', reply: both('تمام، لغيت الحجز الجاري. أقدر أساعدك في حاجة تانية؟', 'Done, I cancelled the booking in progress. Anything else I can help with?') } }];\n}\nif (text.startsWith('/human')) {\n  return [{ json: { ...base, route: 'handoff',\n    reply: both('تمام، هحوّلك لحد من الفريق وهيرد عليك هنا قريب 🙋', 'Sure, I am passing you to a team member. They will reply here shortly 🙋'),\n    staff_text: `🙋 Human requested\\nCustomer: ${user_name}${username ? ' (@' + username + ')' : ''}\\nChat ID: ${chat_id}\\nOpen chat: tg://user?id=${chat_id}` } }];\n}\n\n// Normal chat: load/update session\nconst s = store.sessions[key] || { history: [], draft: {} };\ns.history.push({ role: 'user', text });\ns.history = s.history.slice(-MAX_HISTORY);\ns.updated = now;\nstore.sessions[key] = s;\n\nreturn [{ json: { ...base, route: 'chat', lang_hint, history: s.history, draft: s.draft } }];\n"
+      },
+      "id": "104c460b-ac79-4d19-ad15-ea18f493640f",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2736,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "reply_only",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "81dd454c-5399-4200-8eb5-bdbeeb4cc26f"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reply_only"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "handoff",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "3377faf8-1d46-4124-97b1-94d74db87991"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "handoff"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ae870622-e661-4774-a63c-36df223dd444"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chat"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1fffe08d-56b1-46f6-9a70-f83eb14b915f",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2528,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "76234362-3aed-453d-b088-8a179986512a",
+      "name": "Send reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_STAFF_CHAT_ID",
+        "text": "={{ $json.staff_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cc1fd8ce-fa18-451c-900d-9ae9f157a948",
+      "name": "Notify staff",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE-WITH-YOUR-API-URL/api/v1/rag/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { question: $json.text, chat_id: String($json.chat_id) } }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "03886694-c2ec-4870-b550-979a7c86d501",
+      "name": "RAG query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2256,
+        -336
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Build prompt: merge RAG passages + session into one LLM prompt =====\nconst CONFIG = { CLINIC: 'Smile Clinic', TZ: 'Africa/Cairo', OPEN: '10:00', CLOSE: '22:00' };\n\nconst p = $('Prepare').first().json;\nconst rag = $input.first().json || {};                      // empty/{error} if the API call failed\nconst passages = Array.isArray(rag.passages) ? rag.passages : [];\nconst top_score = Number(rag.top_score ?? passages[0]?.score ?? 0) || 0;\n\nconst context = passages.map((x, i) =>\n  `[${i + 1}] (source: ${x.source || 'unknown'}${x.section ? ' / ' + x.section : ''}) ${x.text}`\n).join('\\n\\n') || '(no relevant passages found)';\n\nconst today = new Date().toLocaleDateString('en-CA', { timeZone: CONFIG.TZ });\nconst weekday = new Date().toLocaleDateString('en-US', { timeZone: CONFIG.TZ, weekday: 'long' });\nconst draft = { ...(p.draft || {}) };\nconst summaryShown = !!draft.awaiting_confirm;\ndelete draft.awaiting_confirm;\nconst history = (p.history || []).slice(0, -1)\n  .map(m => `${m.role === 'user' ? 'Customer' : 'Assistant'}: ${m.text}`).join('\\n') || '(none)';\n\nconst prompt = `You are the virtual receptionist of ${CONFIG.CLINIC}, chatting with customers on Telegram.\nToday is ${weekday}, ${today} (timezone ${CONFIG.TZ}). Bookings are accepted between ${CONFIG.OPEN} and ${CONFIG.CLOSE}.\n\nRULES\n1. Answer questions ONLY from the CONTEXT below. Never invent prices, hours, doctors or policies. If the answer is not in the CONTEXT, set \"answerable\" to false.\n2. Reply in the customer's language (Arabic or English; Egyptian Arabic dialect is fine). Be polite and brief.\n3. End factual answers with the source name, e.g. (Source: price list).\n4. Never give medical or legal advice: use intent \"human_request\".\n5. Booking: collect service, date, time, name and phone. Ask only for what is missing, one or two items at a time. Never guess values. Convert relative dates (tomorrow, بكرة, next Sunday) to YYYY-MM-DD using today's date, and times to 24h HH:MM.\n6. Always return the full current booking details in \"booking\": start from CURRENT_BOOKING_DRAFT and change only what the customer just said. Use null for unknown values.\n7. Set \"confirmed\" to true ONLY if SUMMARY_ALREADY_SHOWN is true and the customer's latest message clearly agrees to it. Otherwise false.\n8. intent is one of: faq, booking, complaint, human_request, other.\n\nOUTPUT: return ONLY one JSON object, no markdown, in this shape:\n{\"intent\":\"faq\",\"language\":\"ar\",\"answerable\":true,\"reply\":\"...\",\"booking\":{\"service\":null,\"date\":null,\"time\":null,\"name\":null,\"phone\":null},\"confirmed\":false}\n\nCONTEXT:\n${context}\n\nCURRENT_BOOKING_DRAFT: ${JSON.stringify(draft)}\nSUMMARY_ALREADY_SHOWN: ${summaryShown}\n\nCONVERSATION SO FAR:\n${history}\n\nCUSTOMER (latest message): ${p.text}`;\n\nreturn [{ json: { prompt, top_score, passages_n: passages.length } }];\n"
+      },
+      "id": "e6a29c8c-a095-462c-a28c-044f0d7b22bc",
+      "name": "Build prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2048,
+        -336
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "id": "ebeadb18-9a8a-4062-9d09-98dbea581edf",
+      "name": "LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -1824,
+        -336
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3.8-27b",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "b4910d90-04f8-4a01-a0bd-1040edb96d1d",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -1808,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Process LLM: parse JSON, enforce business rules, decide the next action =====\nconst CONFIG = {\n  TZ: 'Africa/Cairo',\n  OPEN: '10:00', CLOSE: '22:00', SLOT_MIN: 30,   // keep in sync with 02_branches_and_hours.md\n  CLOSED_WEEKDAYS: [],                           // 0=Sun ... 6=Sat, e.g. [5] if closed on Fridays\n  SCORE_THRESHOLD: 0.55,                         // starting point, tune on your test set\n  MAX_HISTORY: 8,\n};\nconst FIELDS = ['service', 'date', 'time', 'name', 'phone'];\n\nconst prep = $('Prepare').first().json;\nconst ctx = $('Build prompt').first().json;\nconst raw = $input.first().json || {};\nconst out = String(raw.text ?? raw.output ?? raw.response ?? '');\n\nlet llm;\ntry { const m = out.match(/\\{[\\s\\S]*\\}/); llm = JSON.parse(m ? m[0] : out); } catch (e) { llm = null; }\nconst parseFailed = !llm || typeof llm !== 'object';\nif (parseFailed) llm = { intent: 'other', language: prep.lang_hint };\nconst lang = (llm.language || prep.lang_hint) === 'ar' ? 'ar' : 'en';\n\nconst T = {\n  ar: {\n    notSure: 'مش متأكد من الإجابة دي، فهحوّل سؤالك لحد من الفريق وهيرد عليك قريب 🙏',\n    handoff: 'تمام، هحوّلك لحد من الفريق وهيرد عليك هنا قريب 🙋',\n    fail: 'حصلت مشكلة مؤقتة عندي، فهحوّل رسالتك لحد من الفريق وهيرد عليك قريب 🙏',\n    pastDate: 'التاريخ ده مش مظبوط أو عدّى. ممكن تقولي تاريخ تاني؟',\n    closedDay: 'العيادة مقفولة في اليوم ده. ممكن تختار يوم تاني؟',\n    badTime: `المواعيد المتاحة من ${CONFIG.OPEN} لحد ${CONFIG.CLOSE}. ممكن تختار ميعاد في الفترة دي؟`,\n    pastTime: 'الميعاد ده عدّى النهارده. ممكن تختار ميعاد بعد الوقت الحالي؟',\n    badPhone: 'رقم الموبايل شكله مش مظبوط. ممكن تبعته تاني بالصيغة الكاملة؟',\n    summary: d => `راجع الحجز من فضلك:\\n• الخدمة: ${d.service}\\n• التاريخ: ${d.date}\\n• الوقت: ${d.time}\\n• الاسم: ${d.name}\\n• الموبايل: ${d.phone}\\n\\nاكتب \"نعم\" للتأكيد، أو قولّي لو في تعديل.`,\n  },\n  en: {\n    notSure: \"I'm not fully sure about that, so I'm passing your question to a team member who will reply shortly 🙏\",\n    handoff: \"Sure, I'm passing you to a team member. They'll reply here shortly 🙋\",\n    fail: 'I hit a temporary problem, so I am passing your message to a team member who will reply shortly 🙏',\n    pastDate: 'That date is invalid or already past. Could you give me another date?',\n    closedDay: 'The clinic is closed on that day. Could you pick another day?',\n    badTime: `Bookings are available between ${CONFIG.OPEN} and ${CONFIG.CLOSE}. Could you pick a time in that window?`,\n    pastTime: 'That time has already passed today. Could you pick a later time?',\n    badPhone: 'That phone number looks invalid. Could you send it again in full?',\n    summary: d => `Please review your booking:\\n• Service: ${d.service}\\n• Date: ${d.date}\\n• Time: ${d.time}\\n• Name: ${d.name}\\n• Phone: ${d.phone}\\n\\nReply \"yes\" to confirm, or tell me what to change.`,\n  },\n}[lang];\n\n// ---- time helpers (Cairo) ----\nconst toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };\nconst nowDate = new Date().toLocaleDateString('en-CA', { timeZone: CONFIG.TZ });\nconst nowTime = new Date().toLocaleTimeString('en-GB', { timeZone: CONFIG.TZ, hour12: false, hour: '2-digit', minute: '2-digit' }).replace(/^24/, '00');\n\n// ---- merge draft ----\nconst store = $getWorkflowStaticData('global');\nstore.sessions = store.sessions || {};\nconst key = String(prep.chat_id);\nconst sess = store.sessions[key] || { history: [], draft: {} };\n\nconst draft = { ...(prep.draft || {}) };\nconst before = JSON.stringify(FIELDS.map(k => draft[k] || null));\nconst b = (llm.booking && typeof llm.booking === 'object') ? llm.booking : {};\nif (llm.intent === 'booking' || FIELDS.some(k => draft[k])) {\n  for (const k of FIELDS) {\n    const v = b[k];\n    if (v !== null && v !== undefined && String(v).trim() !== '') draft[k] = String(v).trim();\n  }\n}\n\n// ---- validate (code decides, not the model) ----\nconst issues = [];\nif (draft.date) {\n  const okFmt = /^\\d{4}-\\d{2}-\\d{2}$/.test(draft.date) && !isNaN(Date.parse(draft.date));\n  if (!okFmt || draft.date < nowDate) { issues.push(T.pastDate); delete draft.date; }\n  else if (CONFIG.CLOSED_WEEKDAYS.includes(new Date(draft.date + 'T12:00:00Z').getUTCDay())) { issues.push(T.closedDay); delete draft.date; }\n}\nif (draft.time) {\n  const okFmt = /^([01]\\d|2[0-3]):[0-5]\\d$/.test(draft.time);\n  const inHours = okFmt && toMin(draft.time) >= toMin(CONFIG.OPEN) && toMin(draft.time) + CONFIG.SLOT_MIN <= toMin(CONFIG.CLOSE);\n  if (!inHours) { issues.push(T.badTime); delete draft.time; }\n  else if (draft.date === nowDate && toMin(draft.time) <= toMin(nowTime)) { issues.push(T.pastTime); delete draft.time; }\n}\nif (draft.phone) {\n  const digits = draft.phone.replace(/[\\s\\-()]/g, '');\n  if (/^\\+?\\d{10,15}$/.test(digits)) draft.phone = digits;\n  else { issues.push(T.badPhone); delete draft.phone; }\n}\n\nconst after = JSON.stringify(FIELDS.map(k => draft[k] || null));\nconst changed = before !== after;\nconst complete = FIELDS.every(k => draft[k]);\nconst who = `${prep.user_name}${prep.username ? ' (@' + prep.username + ')' : ''}`;\n\n// ---- decide ----\nlet action = 'reply';\nlet reply = String(llm.reply || '').trim();\nlet staff_text = null;\nlet booking = null;\nconst staff = reason => `🙋 ${reason}\\nCustomer: ${who}\\nChat ID: ${prep.chat_id}\\nOpen chat: tg://user?id=${prep.chat_id}\\nLast message: ${prep.text}`;\n\nif (parseFailed) {\n  action = 'handoff'; reply = T.fail; staff_text = staff('Bot error (LLM unavailable or invalid output)');\n} else if (llm.intent === 'complaint' || llm.intent === 'human_request') {\n  action = 'handoff'; reply = reply || T.handoff; staff_text = staff(llm.intent === 'complaint' ? 'Complaint' : 'Human requested');\n} else if (llm.intent === 'faq' && (llm.answerable === false || ctx.top_score < CONFIG.SCORE_THRESHOLD)) {\n  action = 'handoff'; reply = T.notSure; staff_text = staff('Low-confidence question');\n} else if (issues.length) {\n  reply = issues[0]; draft.awaiting_confirm = false;\n} else if (complete) {\n  if (draft.awaiting_confirm && !changed && llm.confirmed === true) {\n    action = 'create_booking';\n    const d = nowDate.replace(/-/g, '');\n    booking = { booking_id: `BK-${d}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`, created_at: new Date().toISOString(), chat_id: prep.chat_id, ...Object.fromEntries(FIELDS.map(k => [k, draft[k]])) };\n  } else if (llm.intent === 'booking' || changed) {\n    draft.awaiting_confirm = true; reply = T.summary(draft);\n  }\n} else {\n  draft.awaiting_confirm = false;\n}\nif (!reply) reply = T.fail;\n\n// ---- persist session (create_booking is finalised by the later nodes) ----\nsess.draft = draft;\nif (action !== 'create_booking') sess.history.push({ role: 'assistant', text: reply });\nsess.history = sess.history.slice(-CONFIG.MAX_HISTORY);\nsess.updated = Date.now();\nstore.sessions[key] = sess;\n\nreturn [{ json: {\n  chat_id: prep.chat_id, user_name: prep.user_name, username: prep.username, text: prep.text,\n  intent: llm.intent || 'other', lang, top_score: ctx.top_score, action, reply, staff_text, booking,\n  answered_by: action === 'handoff' ? 'human' : 'bot',\n} }];\n"
+      },
+      "id": "6db4d651-5f5b-487a-87b9-5d90aa95aed4",
+      "name": "Process LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1568,
+        -336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE",
+          "mode": "list",
+          "cachedResultName": "Smile Clinic Appointments",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Conversation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ts": "={{ $now.toISO() }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "question": "={{ $json.text }}",
+            "intent": "={{ $json.intent }}",
+            "top_score": "={{ $json.top_score }}",
+            "answered_by": "={{ $json.answered_by }}",
+            "action": "={{ $json.action }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ts",
+              "displayName": "ts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question",
+              "displayName": "question",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "top_score",
+              "displayName": "top_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "answered_by",
+              "displayName": "answered_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "b5be60f7-82c3-4e46-b6c7-c8e70dc37564",
+      "name": "Log conversation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1376,
+        -576
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create_booking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "create_booking"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "handoff",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "handoff"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "reply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reply"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "87efe280-3a99-4abd-881d-7c13cfd69025",
+      "name": "Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1376,
+        -336
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE",
+          "mode": "list",
+          "cachedResultName": "Smile Clinic Appointments",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1224386251,
+          "mode": "list",
+          "cachedResultName": "Booking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit#gid=1224386251"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "date",
+              "lookupValue": "={{ $json.booking.date }}"
+            },
+            {
+              "lookupColumn": "time",
+              "lookupValue": "={{ $json.booking.time }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a543abf-e300-4596-925d-8075d6ddfba1",
+      "name": "Check slot",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1168,
+        -416
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Slot decision: is the requested slot still free? =====\nconst p = $('Process LLM').first().json;\nconst bk = p.booking;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.date && r.time);\nconst taken = rows.some(r =>\n  String(r.date).trim() === bk.date &&\n  String(r.time).trim() === bk.time &&\n  String(r.status || 'confirmed').toLowerCase() !== 'cancelled');\n\nif (!taken) return [{ json: { ...p, slot_free: true } }];\n\nconst reply = p.lang === 'ar'\n  ? 'الميعاد ده محجوز بالفعل 🙏 ممكن تختار وقت تاني؟'\n  : 'That time slot is already booked 🙏 Could you pick another time?';\n\nconst store = $getWorkflowStaticData('global');\nconst sess = store.sessions?.[String(p.chat_id)];\nif (sess) {\n  delete sess.draft.time;\n  sess.draft.awaiting_confirm = false;\n  sess.history.push({ role: 'assistant', text: reply });\n}\nreturn [{ json: { chat_id: p.chat_id, reply, slot_free: false } }];\n"
+      },
+      "id": "994177db-3b94-4e3c-a665-c49d0eb0b50f",
+      "name": "Slot decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -416
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.slot_free }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "02cb2c99-1dc3-4399-bd1d-13a8317dfeb9"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "741e5031-f5c5-4af1-b5a6-5af693888188",
+      "name": "Slot free?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -768,
+        -416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE",
+          "mode": "list",
+          "cachedResultName": "Smile Clinic Appointments",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1224386251,
+          "mode": "list",
+          "cachedResultName": "Booking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1rUWg6jhckjLcVhtCfjnaLuTgBvsPavu6oRgNjaxVliE/edit#gid=1224386251"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "booking_id": "={{ $json.booking.booking_id }}",
+            "created_at": "={{ $json.booking.created_at }}",
+            "chat_id": "={{ $json.booking.chat_id }}",
+            "name": "={{ $json.booking.name }}",
+            "phone": "={{ $json.booking.phone }}",
+            "service": "={{ $json.booking.service }}",
+            "date": "={{ $json.booking.date }}",
+            "time": "={{ $json.booking.time }}",
+            "status": "confirmed",
+            "source": "telegram"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "booking_id",
+              "displayName": "booking_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "fb39abd2-f31f-4fcd-92a8-01af5adfb821",
+      "name": "Append booking",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -560,
+        -480
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Booking confirmed: build replies, clear the draft =====\nconst p = $('Slot decision').first().json;\nconst bk = p.booking;\n\nconst reply = p.lang === 'ar'\n  ? `تم تأكيد حجزك ✅\\n• رقم الحجز: ${bk.booking_id}\\n• الخدمة: ${bk.service}\\n• التاريخ: ${bk.date}\\n• الوقت: ${bk.time}\\nهنستناك! لو عايز تغيّر حاجة اكتب /human.`\n  : `Your booking is confirmed ✅\\n• Booking ID: ${bk.booking_id}\\n• Service: ${bk.service}\\n• Date: ${bk.date}\\n• Time: ${bk.time}\\nSee you then! To change anything, type /human.`;\n\nconst staff_text = `📅 New booking ${bk.booking_id}\\nName: ${bk.name}\\nPhone: ${bk.phone}\\nService: ${bk.service}\\nWhen: ${bk.date} ${bk.time}\\nTelegram: ${p.username ? '@' + p.username : 'tg://user?id=' + p.chat_id}`;\n\nconst store = $getWorkflowStaticData('global');\nconst sess = store.sessions?.[String(p.chat_id)];\nif (sess) {\n  sess.draft = {};\n  sess.history.push({ role: 'assistant', text: reply });\n}\nreturn [{ json: { chat_id: p.chat_id, reply, staff_text } }];\n"
+      },
+      "id": "d998afb5-6b9a-46a0-98a2-707ca9c43c42",
+      "name": "Booking confirmed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -3056,
+        -560
+      ],
+      "id": "e4b21b50-960b-48a3-8a51-e0e2d5954248",
+      "name": "Telegram Trigger"
+    }
+  ],
+  "connections": {
+    "Prepare": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify staff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RAG query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG query": {
+      "main": [
+        [
+          {
+            "node": "Build prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Process LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process LLM": {
+      "main": [
+        [
+          {
+            "node": "Log conversation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action": {
+      "main": [
+        [
+          {
+            "node": "Check slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify staff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check slot": {
+      "main": [
+        [
+          {
+            "node": "Slot decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot decision": {
+      "main": [
+        [
+          {
+            "node": "Slot free?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot free?": {
+      "main": [
+        [
+          {
+            "node": "Append booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append booking": {
+      "main": [
+        [
+          {
+            "node": "Booking confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking confirmed": {
+      "main": [
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "d547af3e-d974-4d18-b175-03aa2e7de8ec",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d5151b3f3af536b1bf08e94f64bc18bc16af8de6b55d13fb7a28de2a5c6f374b"
+  },
+  "nodeGroups": [],
+  "id": "WmJrpRaLYxGf6ejx",
+  "tags": []
+}

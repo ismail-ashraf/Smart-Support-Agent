@@ -1,0 +1,59 @@
+{
+  "name": "Smile Clinic - Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e72b39df-88af-4bf1-a76f-c307e8244631",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_DEVELOPER_CHAT_ID",
+        "text": "={{ '🚨 Workflow failed: ' + $json.workflow.name + '\\nNode: ' + ($json.execution.lastNodeExecuted || '?') + '\\nError: ' + ($json.execution.error?.message || 'unknown') + '\\nExecution: ' + $json.execution.url }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b4544cc6-5e00-440d-8833-17e77d5ce52e",
+      "name": "Alert developer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        16
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alert developer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "38f24a01-9a51-464f-8188-dcc9d9e87f53",
+  "meta": {
+    "instanceId": "d5151b3f3af536b1bf08e94f64bc18bc16af8de6b55d13fb7a28de2a5c6f374b"
+  },
+  "nodeGroups": [],
+  "id": "u0kN6eSmq1VjkKHl",
+  "tags": []
+}

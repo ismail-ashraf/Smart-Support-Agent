@@ -1,0 +1,203 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -448,
+        -320
+      ],
+      "id": "9a814654-4141-4377-bc73-61503df007ee",
+      "name": "Telegram Trigger"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -256,
+        -240
+      ],
+      "id": "96a1b586-b4c5-46fc-8e2b-6e1b22d4102c",
+      "name": "Get a file"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE-WITH-YOUR-API-URL/api/v1/ingest",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -80,
+        -160
+      ],
+      "id": "62ff3d21-4778-4ad9-bb55-2cb6993b51aa",
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "5df23656-caf1-4b8d-88fc-98f963ae000f",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        112,
+        -64
+      ],
+      "id": "0dd7f1ee-1cc7-4f98-8e4f-a94bc2632fba",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=⚠️ Failed to process and ingest the file!\nAn error occurred during server processing or connection.\nDetails: {{ $json.message || 'Unknown error' }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        304,
+        48
+      ],
+      "id": "1adcf070-8c9a-4203-a45b-19e5365fe034",
+      "name": "else"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=Successfully ingested document!\nAdded Chunks: {{ $json.body.chunks_added }}\nDocument ID: {{ $json.body.doc_id }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        304,
+        -144
+      ],
+      "id": "c321f7a6-e9fb-47ce-84e0-0c7daf5a1973",
+      "name": "if status code == 200 : send success message"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "if status code == 200 : send success message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "else",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "329fcd74-5790-456a-864a-6eb9eb811afb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d5151b3f3af536b1bf08e94f64bc18bc16af8de6b55d13fb7a28de2a5c6f374b"
+  },
+  "nodeGroups": [],
+  "id": "4pU2WWgV04FQSxLN",
+  "tags": []
+}
